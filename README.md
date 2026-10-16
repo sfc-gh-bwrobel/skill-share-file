@@ -13,6 +13,10 @@ and get the links in chat. A copy of the links is also emailed to a configurable
 
 Anyone with a link can download the file until it expires. Links cannot last longer than 7 days.
 
+The skill never uses Cortex Code's `sql_execute` or session connection, only `snow` with the connection from
+`config.json`. It is safe to run from any Cortex Code workspace or session, including the default one, whatever
+connection is active there (e.g. Snowhouse).
+
 ## Prerequisites
 
 - A Snowflake account where you can use ACCOUNTADMIN (setup creates a notification integration).
