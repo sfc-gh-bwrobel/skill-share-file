@@ -9,6 +9,10 @@ All Snowflake work is done by `scripts/share_file.sh` (in this skill's base dire
 using the connection from `config.json`. Do **not** use `sql_execute` for this skill: the Cortex Code
 active connection may point to a different account.
 
+Because the skill never uses `sql_execute` or the Cortex Code session connection, it is safe to run from any
+workspace or session, including the default one, whatever connection is active there (e.g. Snowhouse).
+It does not run queries in, or change anything on, the active connection's account.
+
 After each upload, the stage stream/task also emails the links to the configured NOTIFY_EMAIL about 10 seconds later.
 That is expected.
 
