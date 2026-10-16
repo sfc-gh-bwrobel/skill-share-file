@@ -2,7 +2,7 @@
 
 A Cortex Code skill that shares local files with partners through 7-day presigned links from a Snowflake stage.
 No Snowsight login and no app: ask Cortex Code to "upload ~/Downloads/deck.pdf for Capgemini purpose RfP for BMW"
-and get the links in chat, plus an optional Gmail draft. A copy of the links is also emailed to a configurable address.
+and get the links in chat. A copy of the links is also emailed to a configurable address.
 
 ## How it works
 
@@ -22,7 +22,6 @@ Anyone with a link can download the file until it expires. Links cannot last lon
   (e.g. `account = "myorg-myaccount"`). With upper case, the connector fails with
   `Oauth code flow requirement 'client_id' is empty`. Check with `snow sql -c <connection> -q "select 1"`.
 - Cortex Code.
-- Optional: the `gmail-nova` MCP server for Gmail drafts.
 
 ## Setup
 
@@ -40,7 +39,7 @@ Anyone with a link can download the file until it expires. Links cannot last lon
    cp .cortex/skills/share-file/config.example.json .cortex/skills/share-file/config.json
    ```
 
-   Set `connection`, `database` (same as above) and `sender_name`. `config.json` is git-ignored.
+   Set `connection` and `database` (same as above). `config.json` is git-ignored.
 
 3. Start `cortex` in the repo folder. The skill is discovered from `.cortex/skills/`.
    To use it from any folder, install it globally from GitHub (run in the repo folder):
@@ -60,11 +59,10 @@ Anyone with a link can download the file until it expires. Links cannot last lon
 Start `cortex` in the repo folder (or anywhere, if you copied the skill globally) and ask in plain language,
 or type `$share-file` followed by the request.
 
-You need: one or more files, a partner, a purpose. A recipient for the Gmail draft is optional.
+You need: one or more files, a partner, a purpose.
 
 ```text
 upload ~/Downloads/rfp.pdf for Capgemini purpose RfP for BMW
-upload ~/Downloads/rfp.pdf for Capgemini purpose RfP for BMW, send to klaus.kring@capgemini.com
 share ~/Desktop/icons.zip and ~/Desktop/badges.pdf for EY purpose partner badges
 $share-file ~/Downloads/deck.pdf
 ```
@@ -74,7 +72,6 @@ If something is missing (for example the partner in the last example), the skill
 What you get:
 
 - **In chat:** folder key, partner, purpose, one download link per file, and the expiry date (Europe/Berlin time).
-- **Gmail draft** (only if you gave a recipient and have the `gmail-nova` MCP): addressed to the recipient, with the links. It is never sent automatically; review and send it from Gmail.
 - **Email** to `NOTIFY_EMAIL` with the same links, about 10 seconds after upload. If you upload several files and the uploads take more than about 10 seconds, the links can arrive in more than one email.
 
 ### Re-sharing after the links expire

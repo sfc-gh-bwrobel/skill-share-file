@@ -1,6 +1,6 @@
 ---
 name: share-file
-description: Share local files with a partner via 7-day presigned Snowflake links, without opening the FILE_UPLOADER Streamlit app. Runs scripts/share_file.sh, which uploads to @<database>.PUBLIC.SHARE_FILES and registers the folder in <database>.APP.FOLDER_METADATA; returns links in chat and optionally creates a Gmail draft. Also renews expired links and lists shares. Use when: share a file, upload file for partner, send file to Capgemini/EY/KPMG/Slalom, file share link, renew share links, list my shares. Triggers: share file, upload the file for, file for partner, share link, presigned link, renew links, show my shares.
+description: Share local files with a partner via 7-day presigned Snowflake links, without opening the FILE_UPLOADER Streamlit app. Runs scripts/share_file.sh, which uploads to @<database>.PUBLIC.SHARE_FILES and registers the folder in <database>.APP.FOLDER_METADATA; returns links in chat. Also renews expired links and lists shares. Use when: share a file, upload file for partner, send file to Capgemini/EY/KPMG/Slalom, file share link, renew share links, list my shares. Triggers: share file, upload the file for, file for partner, share link, presigned link, renew links, show my shares.
 ---
 
 # share-file
@@ -18,9 +18,8 @@ Read `config.json` in this skill's base directory:
 
 - `connection`: snow connection name, passed as `-c` (script default: `coco_183`).
 - `database`: database created by `sql/setup.sql`, passed as `-d` (script default: `TO_SHARE`).
-- `sender_name`: signature for the Gmail draft.
 
-If `config.json` is missing, copy `config.example.json` to `config.json`, ask the user for the three values, and save them.
+If `config.json` is missing, copy `config.example.json` to `config.json`, ask the user for the two values, and save them.
 
 Always run the script with `bash` (it may not be executable):
 
@@ -34,12 +33,11 @@ If the connection's login has expired, the script opens a browser for login; tel
 
 ### Inputs
 
-Parse from the request, e.g. "upload ~/Downloads/deck.pdf for Capgemini purpose RfP for BMW, send to klaus.kring@capgemini.com":
+Parse from the request, e.g. "upload ~/Downloads/deck.pdf for Capgemini purpose RfP for BMW":
 
 - **files** (required): one or more local paths. Expand `~` to absolute paths.
 - **partner** (required). Run the list command below to see existing partner names; if the partner is new or spelled differently, confirm with the user.
 - **purpose** (required): free text.
-- **recipient** (optional): email for the Gmail draft. If missing, ask once. If the user has none, skip the draft.
 
 Ask only for missing inputs, in a single question.
 
@@ -54,33 +52,13 @@ bash "<base_dir>/scripts/share_file.sh" -c "<connection>" -d "<database>" -p "<p
 Output: a line `FOLDER=<key>`, then a JSON array of `{FILE_NAME, FILE_URL, EXPIRES_AT}` (Europe/Berlin time).
 On a non-zero exit, show the error output and stop. If `FILE_NAME` is `ERROR`, report `FILE_URL` as the error.
 
-### Gmail draft (optional)
-
-Only if a recipient is known and `mcp__gmail-nova__create_draft` is available; otherwise skip and say so.
-Call it with `isHtml: true`:
-
-- **to**: recipient
-- **subject**: `<purpose> - files from Snowflake`
-- **body**:
-
-```html
-<p>Hi,</p>
-<p>Please find the files for <b><purpose></b> below:</p>
-<ul>
-  <li><a href="<FILE_URL>"><FILE_NAME></a></li>
-</ul>
-<p>The links expire on <EXPIRES_AT> (CET). Please download the files before that date.</p>
-<p>Best regards,<br><sender_name></p>
-```
-
-Never send the email; only create the draft.
-
 ### Output in chat
 
 - Folder: `<FOLDER>`, partner, purpose
 - One line per file: `[FILE_NAME](FILE_URL)`
 - Expiry date
-- Whether the Gmail draft was created (and for whom)
+
+Do not create Gmail drafts or emails, and do not ask about recipients.
 
 ## Renew links after expiry
 
@@ -90,7 +68,7 @@ Find the folder key with the list command, then:
 bash "<base_dir>/scripts/share_file.sh" -c "<connection>" -d "<database>" -r "<folder>"
 ```
 
-Same JSON output as an upload. No email is sent and the metadata row is not duplicated. Offer the Gmail draft as above.
+Same JSON output as an upload. No email is sent and the metadata row is not duplicated.
 
 ## List shares
 

@@ -1,5 +1,4 @@
 {
   "connection": "my_connection",
-  "database": "TO_SHARE",
-  "sender_name": "Your Name"
+  "database": "TO_SHARE"
 }
