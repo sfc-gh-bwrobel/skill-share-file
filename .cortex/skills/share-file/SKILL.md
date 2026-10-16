@@ -93,3 +93,13 @@ Never send the email; only create the draft.
 To get fresh links for an existing folder, skip steps 1-2 and run step 3 with the existing folder key
 (find it with `SELECT * FROM <DB>.APP.FOLDER_METADATA WHERE PARTNER_NAME = '<partner>' ORDER BY CREATED_AT DESC`).
 No new email is sent and the metadata row is not duplicated.
+
+## Listing shares
+
+For "show my shares (for <partner>)", run and present as a table:
+
+```sql
+SELECT FOLDER_NAME, PARTNER_NAME, DESCRIPTION, CREATED_AT FROM <DB>.APP.FOLDER_METADATA
+WHERE PARTNER_NAME ILIKE '<partner>'  -- omit when no partner given
+ORDER BY CREATED_AT DESC;
+```

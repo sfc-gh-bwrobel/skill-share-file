@@ -42,6 +42,50 @@ Anyone with a link can download the file until it expires. Links cannot last lon
 
 4. Test: "share /tmp/test.txt for TEST purpose setup test". Check the link in chat and the email in your inbox.
 
+## Usage
+
+Start `cortex` in the repo folder (or anywhere, if you copied the skill globally) and ask in plain language,
+or type `$share-file` followed by the request.
+
+You need: one or more files, a partner, a purpose. A recipient for the Gmail draft is optional.
+
+```text
+upload ~/Downloads/rfp.pdf for Capgemini purpose RfP for BMW
+upload ~/Downloads/rfp.pdf for Capgemini purpose RfP for BMW, send to klaus.kring@capgemini.com
+share ~/Desktop/icons.zip and ~/Desktop/badges.pdf for EY purpose partner badges
+$share-file ~/Downloads/deck.pdf
+```
+
+If something is missing (for example the partner in the last example), the skill asks once.
+
+What you get:
+
+- **In chat:** folder key, partner, purpose, one download link per file, and the expiry date (Europe/Berlin time).
+- **Gmail draft** (only if you gave a recipient and have the `gmail-nova` MCP): addressed to the recipient, with the links. It is never sent automatically; review and send it from Gmail.
+- **Email** to `NOTIFY_EMAIL` with the same links, about 10 seconds after upload. If you upload several files and the uploads take more than about 10 seconds, the links can arrive in more than one email.
+
+### Re-sharing after the links expire
+
+Links last 7 days. To get new links for files you already uploaded:
+
+```text
+renew the share links for Capgemini, RfP for BMW
+```
+
+The skill looks up the folder in `FOLDER_METADATA` and creates fresh links. Nothing is uploaded again and no email is sent.
+
+### List what you have shared
+
+```text
+show my shares for Capgemini
+```
+
+Or in SQL:
+
+```sql
+SELECT FOLDER_NAME, PARTNER_NAME, DESCRIPTION, CREATED_AT FROM <DB>.APP.FOLDER_METADATA ORDER BY CREATED_AT DESC;
+```
+
 ## Change the email recipient
 
 ```bash
