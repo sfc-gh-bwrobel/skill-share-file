@@ -1,32 +1,40 @@
 ---
 name: share-file
-description: Share local files with a partner via 7-day presigned Snowflake links, without opening the FILE_UPLOADER Streamlit app. Uploads to @TO_SHARE.PUBLIC.SHARE_FILES, registers the folder in TO_SHARE.APP.FOLDER_METADATA, returns links in chat and creates a Gmail draft. Use when: share a file, upload file for partner, send file to Capgemini/EY/KPMG/Slalom, file share link. Triggers: share file, upload the file for, file for partner, share link, presigned link.
+description: Share local files with a partner via 7-day presigned Snowflake links, without opening the FILE_UPLOADER Streamlit app. Uploads to @<database>.PUBLIC.SHARE_FILES, registers the folder in <database>.APP.FOLDER_METADATA, returns links in chat and optionally creates a Gmail draft. Use when: share a file, upload file for partner, send file to Capgemini/EY/KPMG/Slalom, file share link. Triggers: share file, upload the file for, file for partner, share link, presigned link.
 ---
 
 # share-file
 
-Replaces the manual flow in the Streamlit app `TO_SHARE.APP.FILE_UPLOADER`.
-The existing stream/task (`FILES_STREAM` -> `EXEC_GENERATE_SHARES` -> `GENERATE_SHARES()`) is
-unchanged and still sends the "File Share Links" email to Bart about 10 seconds after upload. That is expected.
+Uploads files to a Snowflake stage and returns 7-day presigned links. Requires the objects from `sql/setup.sql`
+(see README.md). After each upload, the stage stream/task also emails the links to the configured NOTIFY_EMAIL
+about 10 seconds later. That is expected.
 
-Connection: `coco_183` (account SFSEEUROPE-EU_DEMO183).
+## 0. Config
+
+Read `config.json` in this skill's base directory:
+
+- `connection`: Snowflake connection name, passed as `connection` to every `sql_execute` call.
+- `database`: database created by `sql/setup.sql` (written as `<DB>` below).
+- `sender_name`: signature for the Gmail draft.
+
+If `config.json` is missing, copy `config.example.json` to `config.json`, ask the user for the three values, and save them.
 
 ## Inputs
 
 Parse from the request, e.g. "upload ~/Downloads/deck.pdf for Capgemini purpose RfP for BMW, send to klaus.kring@capgemini.com":
 
-- **files** (required): one or more local paths. Expand `~`. Verify each exists (`ls -l`) before uploading.
-- **partner** (required): known values in FOLDER_METADATA: Capgemini, EY, KPMG, Slalom. If the partner is not one of these, confirm the spelling with the user.
+- **files** (required): one or more local paths. Expand `~` to an absolute path. Verify each exists (`ls -l`) before uploading.
+- **partner** (required): check `SELECT DISTINCT PARTNER_NAME FROM <DB>.APP.FOLDER_METADATA`. If the partner is new or spelled differently, confirm with the user.
 - **purpose** (required): free text, stored as DESCRIPTION.
-- **recipient** (optional): email for the Gmail draft. If missing, ask once. If the user has none, skip the draft and say so.
+- **recipient** (optional): email for the Gmail draft. If missing, ask once. If the user has none, skip the draft.
 
-Ask only for missing required inputs, in a single question.
+Ask only for missing inputs, in a single question.
 
 ## Steps
 
 ### 1. Folder key
 
-Generate in the app's format `YYMMDD-xxxxx` (5 alphanumeric chars):
+Format `YYMMDD-xxxxx` (5 alphanumeric chars):
 
 ```bash
 echo "$(date +%y%m%d)-$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 5)"
@@ -34,29 +42,28 @@ echo "$(date +%y%m%d)-$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 5)"
 
 ### 2. Upload
 
-Run `snow` **directly in the bash command, once per file**. Do not wrap it in a script: the
-harness only injects the Snowflake session token when the command line itself calls `snow`.
+One `sql_execute` call per file (absolute path, no `~`). Quote paths containing spaces exactly as shown:
 
-```bash
-snow stage copy "<local_path>" "@TO_SHARE.PUBLIC.SHARE_FILES/<FOLDER>/" -c coco_183 --overwrite --no-auto-compress
+```sql
+PUT 'file://<absolute_path>' '@<DB>.PUBLIC.SHARE_FILES/<FOLDER>' AUTO_COMPRESS = FALSE OVERWRITE = TRUE;
 ```
 
-Check that the status column says `UPLOADED`. On an error, stop and report it; do not call step 3.
+Check that the status is `UPLOADED`. On an error, stop and report it; do not continue to step 3.
 
 ### 3. Register and get links
 
-Use `sql_execute`. Escape single quotes in partner/purpose by doubling them.
+Escape single quotes in partner/purpose by doubling them.
 
 ```sql
-CALL TO_SHARE.APP.REGISTER_SHARE('<FOLDER>', '<partner>', '<purpose>');
+CALL <DB>.APP.REGISTER_SHARE('<FOLDER>', '<partner>', '<purpose>');
 ```
 
 Returns `FILE_NAME, FILE_URL, EXPIRES_AT` (Europe/Berlin time). If `FILE_NAME = 'ERROR'`, report `FILE_URL` as the error message and stop.
-The procedure refreshes the stage directory, inserts the metadata row (idempotent), and creates 7-day presigned URLs.
 
-### 4. Gmail draft
+### 4. Gmail draft (optional)
 
-If a recipient is known, call `mcp__gmail-nova__create_draft` with `isHtml: true`:
+Only if a recipient is known and `mcp__gmail-nova__create_draft` is available; otherwise skip and say so.
+Call it with `isHtml: true`:
 
 - **to**: recipient
 - **subject**: `<purpose> - files from Snowflake`
@@ -69,14 +76,12 @@ If a recipient is known, call `mcp__gmail-nova__create_draft` with `isHtml: true
   <li><a href="<FILE_URL>"><FILE_NAME></a></li>
 </ul>
 <p>The links expire on <EXPIRES_AT> (CET). Please download the files before that date.</p>
-<p>Best regards,<br>Bart</p>
+<p>Best regards,<br><sender_name></p>
 ```
 
 Never send the email; only create the draft.
 
 ### 5. Output in chat
-
-Short summary:
 
 - Folder: `<FOLDER>`, partner, purpose
 - One line per file: `[FILE_NAME](FILE_URL)`
@@ -85,6 +90,6 @@ Short summary:
 
 ## Re-sharing after expiry
 
-Links expire after 7 days. To get fresh links for an existing folder, skip steps 1-2 and run step 3 with the existing folder key
-(find it with `SELECT * FROM TO_SHARE.APP.FOLDER_METADATA WHERE PARTNER_NAME = '<partner>' ORDER BY CREATED_AT DESC`).
-The metadata row is not duplicated.
+To get fresh links for an existing folder, skip steps 1-2 and run step 3 with the existing folder key
+(find it with `SELECT * FROM <DB>.APP.FOLDER_METADATA WHERE PARTNER_NAME = '<partner>' ORDER BY CREATED_AT DESC`).
+No new email is sent and the metadata row is not duplicated.
