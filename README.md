@@ -6,7 +6,8 @@ and get the links in chat, plus an optional Gmail draft. A copy of the links is 
 
 ## How it works
 
-1. The skill uploads the file to `@<DB>.PUBLIC.SHARE_FILES/<YYMMDD-xxxxx>/` with `PUT`.
+1. The skill runs `scripts/share_file.sh`, which uploads the file to `@<DB>.PUBLIC.SHARE_FILES/<YYMMDD-xxxxx>/` with `snow stage copy`,
+   using the `snow` connection from `config.json` (not the connection active in Cortex Code).
 2. `<DB>.APP.REGISTER_SHARE` records the partner and purpose in `<DB>.APP.FOLDER_METADATA` and returns 7-day presigned links.
 3. The stream `FILES_STREAM` triggers the task `EXEC_GENERATE_SHARES`, which emails the links to `NOTIFY_EMAIL`.
 
@@ -16,7 +17,11 @@ Anyone with a link can download the file until it expires. Links cannot last lon
 
 - A Snowflake account where you can use ACCOUNTADMIN (setup creates a notification integration).
 - Your email verified in your Snowflake user profile (required by `SYSTEM$SEND_EMAIL`).
-- Cortex Code with a connection to that account.
+- Snowflake CLI (`snow`) with a connection to that account in `~/.snowflake/connections.toml`.
+  For browser login (`authenticator = "OAUTH_AUTHORIZATION_CODE"`) write `account` in **lower case**
+  (e.g. `account = "myorg-myaccount"`). With upper case, the connector fails with
+  `Oauth code flow requirement 'client_id' is empty`. Check with `snow sql -c <connection> -q "select 1"`.
+- Cortex Code.
 - Optional: the `gmail-nova` MCP server for Gmail drafts.
 
 ## Setup
@@ -38,7 +43,15 @@ Anyone with a link can download the file until it expires. Links cannot last lon
    Set `connection`, `database` (same as above) and `sender_name`. `config.json` is git-ignored.
 
 3. Start `cortex` in the repo folder. The skill is discovered from `.cortex/skills/`.
-   To use it from any folder, copy `.cortex/skills/share-file` to `~/.snowflake/cortex/skills/`.
+   To use it from any folder, install it globally from GitHub (run in the repo folder):
+
+   ```bash
+   make install     # cortex skill add from GitHub, then copies your config.json into the installed copy
+   make reinstall   # uninstall + install, e.g. to pick up new commits
+   make uninstall   # cortex skill remove
+   ```
+
+   Avoid running `cortex` inside this repo while the global install is present: both copies are named `share-file`.
 
 4. Test: "share /tmp/test.txt for TEST purpose setup test". Check the link in chat and the email in your inbox.
 
@@ -84,6 +97,16 @@ Or in SQL:
 
 ```sql
 SELECT FOLDER_NAME, PARTNER_NAME, DESCRIPTION, CREATED_AT FROM <DB>.APP.FOLDER_METADATA ORDER BY CREATED_AT DESC;
+```
+
+## Using the script without Cortex Code
+
+```bash
+S=.cortex/skills/share-file/scripts/share_file.sh
+bash $S -p Capgemini -m "RfP for BMW" ~/Downloads/rfp.pdf     # upload, prints links (JSON)
+bash $S -r 261016-4otwf                                         # fresh links for an existing folder
+bash $S -l -p Capgemini                                         # list shares
+bash $S -c other_conn -d OTHER_DB -l                            # defaults: -c coco_183 -d TO_SHARE
 ```
 
 ## Change the email recipient

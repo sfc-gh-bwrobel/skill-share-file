@@ -1,66 +1,60 @@
 ---
 name: share-file
-description: Share local files with a partner via 7-day presigned Snowflake links, without opening the FILE_UPLOADER Streamlit app. Uploads to @<database>.PUBLIC.SHARE_FILES, registers the folder in <database>.APP.FOLDER_METADATA, returns links in chat and optionally creates a Gmail draft. Use when: share a file, upload file for partner, send file to Capgemini/EY/KPMG/Slalom, file share link. Triggers: share file, upload the file for, file for partner, share link, presigned link.
+description: Share local files with a partner via 7-day presigned Snowflake links, without opening the FILE_UPLOADER Streamlit app. Runs scripts/share_file.sh, which uploads to @<database>.PUBLIC.SHARE_FILES and registers the folder in <database>.APP.FOLDER_METADATA; returns links in chat and optionally creates a Gmail draft. Also renews expired links and lists shares. Use when: share a file, upload file for partner, send file to Capgemini/EY/KPMG/Slalom, file share link, renew share links, list my shares. Triggers: share file, upload the file for, file for partner, share link, presigned link, renew links, show my shares.
 ---
 
 # share-file
 
-Uploads files to a Snowflake stage and returns 7-day presigned links. Requires the objects from `sql/setup.sql`
-(see README.md). After each upload, the stage stream/task also emails the links to the configured NOTIFY_EMAIL
-about 10 seconds later. That is expected.
+All Snowflake work is done by `scripts/share_file.sh` (in this skill's base directory) through the `snow` CLI,
+using the connection from `config.json`. Do **not** use `sql_execute` for this skill: the Cortex Code
+active connection may point to a different account.
+
+After each upload, the stage stream/task also emails the links to the configured NOTIFY_EMAIL about 10 seconds later.
+That is expected.
 
 ## 0. Config
 
 Read `config.json` in this skill's base directory:
 
-- `connection`: Snowflake connection name, passed as `connection` to every `sql_execute` call.
-- `database`: database created by `sql/setup.sql` (written as `<DB>` below).
+- `connection`: snow connection name, passed as `-c` (script default: `coco_183`).
+- `database`: database created by `sql/setup.sql`, passed as `-d` (script default: `TO_SHARE`).
 - `sender_name`: signature for the Gmail draft.
 
 If `config.json` is missing, copy `config.example.json` to `config.json`, ask the user for the three values, and save them.
 
-## Inputs
+Always run the script with `bash` (it may not be executable):
+
+```bash
+bash "<base_dir>/scripts/share_file.sh" -c "<connection>" -d "<database>" ...
+```
+
+If the connection's login has expired, the script opens a browser for login; tell the user to complete it.
+
+## Share files
+
+### Inputs
 
 Parse from the request, e.g. "upload ~/Downloads/deck.pdf for Capgemini purpose RfP for BMW, send to klaus.kring@capgemini.com":
 
-- **files** (required): one or more local paths. Expand `~` to an absolute path. Verify each exists (`ls -l`) before uploading.
-- **partner** (required): check `SELECT DISTINCT PARTNER_NAME FROM <DB>.APP.FOLDER_METADATA`. If the partner is new or spelled differently, confirm with the user.
-- **purpose** (required): free text, stored as DESCRIPTION.
+- **files** (required): one or more local paths. Expand `~` to absolute paths.
+- **partner** (required). Run the list command below to see existing partner names; if the partner is new or spelled differently, confirm with the user.
+- **purpose** (required): free text.
 - **recipient** (optional): email for the Gmail draft. If missing, ask once. If the user has none, skip the draft.
 
 Ask only for missing inputs, in a single question.
 
-## Steps
+### Run
 
-### 1. Folder key
-
-Format `YYMMDD-xxxxx` (5 alphanumeric chars):
+Quote every argument:
 
 ```bash
-echo "$(date +%y%m%d)-$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 5)"
+bash "<base_dir>/scripts/share_file.sh" -c "<connection>" -d "<database>" -p "<partner>" -m "<purpose>" "<file1>" ["<file2>" ...]
 ```
 
-### 2. Upload
+Output: a line `FOLDER=<key>`, then a JSON array of `{FILE_NAME, FILE_URL, EXPIRES_AT}` (Europe/Berlin time).
+On a non-zero exit, show the error output and stop. If `FILE_NAME` is `ERROR`, report `FILE_URL` as the error.
 
-One `sql_execute` call per file (absolute path, no `~`). Quote paths containing spaces exactly as shown:
-
-```sql
-PUT 'file://<absolute_path>' '@<DB>.PUBLIC.SHARE_FILES/<FOLDER>' AUTO_COMPRESS = FALSE OVERWRITE = TRUE;
-```
-
-Check that the status is `UPLOADED`. On an error, stop and report it; do not continue to step 3.
-
-### 3. Register and get links
-
-Escape single quotes in partner/purpose by doubling them.
-
-```sql
-CALL <DB>.APP.REGISTER_SHARE('<FOLDER>', '<partner>', '<purpose>');
-```
-
-Returns `FILE_NAME, FILE_URL, EXPIRES_AT` (Europe/Berlin time). If `FILE_NAME = 'ERROR'`, report `FILE_URL` as the error message and stop.
-
-### 4. Gmail draft (optional)
+### Gmail draft (optional)
 
 Only if a recipient is known and `mcp__gmail-nova__create_draft` is available; otherwise skip and say so.
 Call it with `isHtml: true`:
@@ -81,25 +75,29 @@ Call it with `isHtml: true`:
 
 Never send the email; only create the draft.
 
-### 5. Output in chat
+### Output in chat
 
 - Folder: `<FOLDER>`, partner, purpose
 - One line per file: `[FILE_NAME](FILE_URL)`
 - Expiry date
 - Whether the Gmail draft was created (and for whom)
 
-## Re-sharing after expiry
+## Renew links after expiry
 
-To get fresh links for an existing folder, skip steps 1-2 and run step 3 with the existing folder key
-(find it with `SELECT * FROM <DB>.APP.FOLDER_METADATA WHERE PARTNER_NAME = '<partner>' ORDER BY CREATED_AT DESC`).
-No new email is sent and the metadata row is not duplicated.
+Find the folder key with the list command, then:
 
-## Listing shares
-
-For "show my shares (for <partner>)", run and present as a table:
-
-```sql
-SELECT FOLDER_NAME, PARTNER_NAME, DESCRIPTION, CREATED_AT FROM <DB>.APP.FOLDER_METADATA
-WHERE PARTNER_NAME ILIKE '<partner>'  -- omit when no partner given
-ORDER BY CREATED_AT DESC;
+```bash
+bash "<base_dir>/scripts/share_file.sh" -c "<connection>" -d "<database>" -r "<folder>"
 ```
+
+Same JSON output as an upload. No email is sent and the metadata row is not duplicated. Offer the Gmail draft as above.
+
+## List shares
+
+For "show my shares (for <partner>)":
+
+```bash
+bash "<base_dir>/scripts/share_file.sh" -c "<connection>" -d "<database>" -l [-p "<partner>"]
+```
+
+Returns JSON with `FOLDER_NAME, PARTNER_NAME, DESCRIPTION, CREATED_AT`; present it as a table.
